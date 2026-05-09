@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NAUTILUS — Fleet Command Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;500;600;700;900&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- Boot Screen -->
+<div id="boot-screen">
+  <div class="boot-inner">
+    <div class="boot-logo">
+      <div class="boot-icon">⬡</div>
+      <div class="boot-title">NAUTILUS</div>
+      <div class="boot-subtitle">MARITIME CRISIS OPERATIONS SYSTEM v4.2.1</div>
+    </div>
+    <div class="boot-progress-wrap">
+      <div class="boot-progress-bar"><div class="boot-progress-fill" id="boot-fill"></div></div>
+      <div class="boot-status" id="boot-status">INITIALIZING SUBSYSTEMS...</div>
+    </div>
+    <div class="boot-lines" id="boot-lines"></div>
+    <div class="boot-role-select" id="boot-role-select" style="display:none">
+      <div class="boot-role-title">SELECT OPERATIONAL ROLE</div>
+      <div class="boot-role-buttons">
+        <button class="role-btn" onclick="selectRole('command')">
+          <span class="role-icon">◈</span>
+          <span class="role-name">FLEET COMMAND</span>
+          <span class="role-desc">Full fleet oversight & control</span>
+        </button>
+        <button class="role-btn" onclick="selectRole('captain')">
+          <span class="role-icon">◉</span>
+          <span class="role-name">SHIP CAPTAIN</span>
+          <span class="role-desc">Single vessel operations</span>
+        </button>
+      </div>
+      <div class="boot-role-ship" id="boot-role-ship" style="display:none">
+        <div class="boot-role-title" style="margin-top:24px">SELECT YOUR VESSEL</div>
+        <select id="captain-ship-select" class="ship-select">
+        </select>
+        <button class="role-btn confirm-btn" onclick="confirmCaptain()">CONFIRM & ENTER</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" style="display:none">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">⬡ NAUTILUS</div>
+      <div class="topbar-region">STRAIT OF HORMUZ OPS</div>
+      <div class="topbar-divider"></div>
+      <div class="topbar-role" id="topbar-role">COMMAND</div>
+    </div>
+    <div class="topbar-center">
+      <div class="topbar-clock" id="topbar-clock">00:00:00 UTC</div>
+      <div class="topbar-threat">
+        <span class="threat-label">THREAT</span>
+        <span class="threat-level critical">CRITICAL</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-stat">
+        <span class="stat-val" id="stat-active">15</span>
+        <span class="stat-label">VESSELS</span>
+      </div>
+      <div class="topbar-stat">
+        <span class="stat-val alert" id="stat-alerts">0</span>
+        <span class="stat-label">ALERTS</span>
+      </div>
+      <div class="topbar-stat">
+        <span class="stat-val" id="stat-distress">0</span>
+        <span class="stat-label">DISTRESS</span>
+      </div>
+      <button class="topbar-btn" onclick="togglePlayback()">◀▶ PLAYBACK</button>
+      <button class="topbar-btn danger" onclick="toggleAlertsMute()" id="mute-btn">🔊</button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="main-layout">
+
+    <!-- Left Panel -->
+    <aside class="left-panel">
+      <div class="panel-tabs">
+        <button class="tab-btn active" onclick="switchLeftTab('fleet')" data-tab="fleet">FLEET</button>
+        <button class="tab-btn" onclick="switchLeftTab('alerts')" data-tab="alerts">ALERTS</button>
+        <button class="tab-btn" onclick="switchLeftTab('weather')" data-tab="weather">WEATHER</button>
+      </div>
+
+      <!-- Fleet Tab -->
+      <div class="tab-content active" id="tab-fleet">
+        <div class="panel-search">
+          <input type="text" placeholder="SEARCH VESSELS..." class="search-input" oninput="filterFleet(this.value)"/>
+        </div>
+        <div class="fleet-filter-row">
+          <button class="filter-chip active" onclick="setFleetFilter('all', this)">ALL</button>
+          <button class="filter-chip" onclick="setFleetFilter('distressed', this)">DISTRESS</button>
+          <button class="filter-chip" onclick="setFleetFilter('rerouting', this)">REROUTE</button>
+          <button class="filter-chip" onclick="setFleetFilter('warning', this)">WARNING</button>
+        </div>
+        <div class="fleet-list" id="fleet-list"></div>
+      </div>
+
+      <!-- Alerts Tab -->
+      <div class="tab-content" id="tab-alerts">
+        <div class="alerts-header">
+          <span id="alert-count-badge">0 ACTIVE</span>
+          <button class="ack-all-btn" onclick="acknowledgeAll()">ACK ALL</button>
+        </div>
+        <div class="alerts-list" id="alerts-list">
+          <div class="no-alerts">NO ACTIVE ALERTS</div>
+        </div>
+      </div>
+
+      <!-- Weather Tab -->
+      <div class="tab-content" id="tab-weather">
+        <div class="weather-panel" id="weather-panel">
+          <div class="weather-loading">FETCHING WEATHER DATA...</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Map Area -->
+    <div class="map-area">
+      <div id="map"></div>
+
+      <!-- Map Controls -->
+      <div class="map-controls">
+        <button class="map-ctrl-btn active" id="zone-draw-btn" onclick="toggleZoneDraw()" title="Draw Restricted Zone" id="zone-toggle">✦ DRAW ZONE</button>
+        <button class="map-ctrl-btn" onclick="clearAllZones()" title="Clear Zones">✕ CLEAR ZONES</button>
+        <button class="map-ctrl-btn" onclick="toggleWeatherOverlay()" title="Weather Overlay">☁ WEATHER</button>
+        <button class="map-ctrl-btn" onclick="toggleProximityRings()" title="Proximity Rings">◎ PROXIMITY</button>
+        <button class="map-ctrl-btn" onclick="fitFleet()" title="Fit Fleet">⊡ FIT FLEET</button>
+      </div>
+
+      <!-- Zone Draw Mode Banner -->
+      <div class="zone-draw-banner" id="zone-draw-banner" style="display:none">
+        <span>◈ ZONE DRAW MODE — Click map to add vertices. Double-click to close polygon.</span>
+        <button onclick="cancelZoneDraw()">CANCEL</button>
+      </div>
+
+      <!-- Proximity Alert Overlay -->
+      <div class="proximity-overlay" id="proximity-overlay" style="display:none">
+        <div class="prox-icon">⚠</div>
+        <div class="prox-text" id="prox-text">PROXIMITY WARNING</div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <aside class="right-panel">
+      <div class="right-tabs">
+        <button class="tab-btn active" onclick="switchRightTab('detail')" data-tab="detail">DETAIL</button>
+        <button class="tab-btn" onclick="switchRightTab('comms')" data-tab="comms">COMMS</button>
+        <button class="tab-btn" onclick="switchRightTab('routes')" data-tab="routes">ROUTES</button>
+      </div>
+
+      <!-- Ship Detail Tab -->
+      <div class="tab-content active" id="rtab-detail">
+        <div class="no-selection" id="no-selection-msg">
+          <div class="no-sel-icon">◎</div>
+          <div>SELECT A VESSEL</div>
+          <div class="no-sel-sub">Click a ship on the map or fleet list</div>
+        </div>
+        <div class="ship-detail" id="ship-detail" style="display:none">
+          <div class="detail-header">
+            <div class="detail-ship-icon" id="det-icon">🚢</div>
+            <div class="detail-ship-info">
+              <div class="detail-ship-name" id="det-name">—</div>
+              <div class="detail-ship-id" id="det-id">—</div>
+            </div>
+            <div class="detail-status-badge" id="det-status">NORMAL</div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-cell">
+              <div class="dcell-label">POSITION</div>
+              <div class="dcell-val" id="det-pos">—</div>
+            </div>
+            <div class="detail-cell">
+              <div class="dcell-label">SPEED</div>
+              <div class="dcell-val" id="det-speed">—</div>
+            </div>
+            <div class="detail-cell">
+              <div class="dcell-label">HEADING</div>
+              <div class="dcell-val" id="det-heading">—</div>
+            </div>
+            <div class="detail-cell">
+              <div class="dcell-label">DESTINATION</div>
+              <div class="dcell-val" id="det-dest">—</div>
+            </div>
+          </div>
+
+          <!-- Fuel Bar -->
+          <div class="fuel-section">
+            <div class="fuel-label-row">
+              <span>FUEL REMAINING</span>
+              <span id="det-fuel-pct">—</span>
+            </div>
+            <div class="fuel-bar">
+              <div class="fuel-fill" id="det-fuel-bar"></div>
+            </div>
+          </div>
+
+          <!-- Cargo -->
+          <div class="detail-section">
+            <div class="section-title">CARGO MANIFEST</div>
+            <div class="cargo-value" id="det-cargo">—</div>
+          </div>
+
+          <!-- Route Info -->
+          <div class="detail-section">
+            <div class="section-title">ROUTE STATUS</div>
+            <div class="route-info" id="det-route">—</div>
+          </div>
+
+          <!-- Command Actions — only for Command role -->
+          <div class="detail-section command-only" id="command-actions">
+            <div class="section-title">ISSUE DIRECTIVE</div>
+            <div class="directive-form">
+              <select class="directive-select" id="directive-type">
+                <option value="">SELECT ACTION...</option>
+                <option value="reroute_port">REROUTE TO PORT</option>
+                <option value="waypoint">DIVERT TO WAYPOINT</option>
+                <option value="hold">HOLD POSITION</option>
+                <option value="resume">RESUME COURSE</option>
+                <option value="emergency">EMERGENCY STOP</option>
+              </select>
+              <input type="text" class="directive-input" id="directive-detail" placeholder="PORT / COORDINATES / NOTES"/>
+              <button class="directive-send-btn" onclick="issueDirective()">TRANSMIT DIRECTIVE ▶</button>
+            </div>
+          </div>
+
+          <!-- Captain Actions — only for captain role -->
+          <div class="detail-section captain-only" id="captain-actions" style="display:none">
+            <div class="section-title">PENDING DIRECTIVES</div>
+            <div id="pending-directives" class="pending-directives">
+              <div class="no-directives">No pending directives</div>
+            </div>
+            <div class="section-title" style="margin-top:16px">DISTRESS SIGNAL</div>
+            <textarea class="distress-input" id="distress-msg" placeholder="Describe the situation in detail..."></textarea>
+            <button class="distress-send-btn" onclick="sendDistress()">⚠ TRANSMIT DISTRESS</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comms Tab -->
+      <div class="tab-content" id="rtab-comms">
+        <div class="comms-panel">
+          <div class="comms-log" id="comms-log">
+            <div class="comms-empty">NO TRANSMISSIONS</div>
+          </div>
+          <div class="comms-input-area">
+            <div class="comms-to-row">
+              <span class="comms-label">TO:</span>
+              <select class="comms-to-select" id="comms-to">
+                <option value="all">ALL VESSELS</option>
+              </select>
+            </div>
+            <div class="comms-msg-row">
+              <textarea class="comms-msg-input" id="comms-msg" placeholder="Enter transmission..."></textarea>
+              <button class="comms-send-btn" onclick="sendComms()">▶</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Routes Tab -->
+      <div class="tab-content" id="rtab-routes">
+        <div class="routes-panel" id="routes-panel">
+          <div class="routes-empty">SELECT A VESSEL TO VIEW ROUTE OPTIONS</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Playback Bar -->
+  <div class="playback-bar" id="playback-bar" style="display:none">
+    <button class="pb-btn" onclick="pbControl('start')">⏮</button>
+    <button class="pb-btn" onclick="pbControl('play')">▶</button>
+    <button class="pb-btn" onclick="pbControl('pause')">⏸</button>
+    <button class="pb-btn" onclick="pbControl('end')">⏭</button>
+    <div class="pb-timeline">
+      <div class="pb-track">
+        <div class="pb-fill" id="pb-fill"></div>
+        <div class="pb-thumb" id="pb-thumb"></div>
+        <div class="pb-events" id="pb-events"></div>
+      </div>
+      <input type="range" min="0" max="120" value="120" class="pb-range" id="pb-range" oninput="pbScrub(this.value)"/>
+    </div>
+    <div class="pb-time" id="pb-time">LIVE</div>
+    <div class="pb-speed">
+      <span>SPEED:</span>
+      <select class="pb-speed-sel" onchange="setPbSpeed(this.value)">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+        <option value="8">8×</option>
+      </select>
+    </div>
+    <button class="pb-btn close" onclick="togglePlayback()">✕</button>
+  </div>
+
+  <!-- AI Distress Analysis Modal -->
+  <div class="modal-overlay" id="ai-modal" style="display:none">
+    <div class="ai-modal">
+      <div class="ai-modal-header">
+        <span class="ai-icon">◈</span>
+        <span>AI DISTRESS ANALYSIS</span>
+        <button class="modal-close" onclick="closeAiModal()">✕</button>
+      </div>
+      <div class="ai-modal-body" id="ai-modal-body">
+        <div class="ai-analyzing">
+          <div class="ai-spinner"></div>
+          <div>ANALYZING DISTRESS MESSAGE...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zone Editor Modal -->
+  <div class="modal-overlay" id="zone-modal" style="display:none">
+    <div class="zone-modal">
+      <div class="zone-modal-header">
+        <span>◈ RESTRICTED ZONE CONFIGURATION</span>
+        <button class="modal-close" onclick="closeZoneModal()">✕</button>
+      </div>
+      <div class="zone-modal-body">
+        <div class="zone-form-row">
+          <label>ZONE NAME</label>
+          <input type="text" id="zone-name-input" placeholder="e.g. EXCLUSION ALPHA" class="zone-input"/>
+        </div>
+        <div class="zone-form-row">
+          <label>RISK LEVEL</label>
+          <select id="zone-risk" class="zone-input">
+            <option value="advisory">ADVISORY</option>
+            <option value="restricted">RESTRICTED</option>
+            <option value="exclusion">EXCLUSION ZONE</option>
+          </select>
+        </div>
+        <div class="zone-form-row">
+          <label>REASON</label>
+          <input type="text" id="zone-reason" placeholder="Naval blockade, mine field..." class="zone-input"/>
+        </div>
+        <div class="zone-modal-actions">
+          <button class="zone-cancel-btn" onclick="closeZoneModal()">CANCEL</button>
+          <button class="zone-confirm-btn" onclick="confirmZone()">ESTABLISH ZONE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Route Options Modal (Bonus) -->
+  <div class="modal-overlay" id="route-modal" style="display:none">
+    <div class="route-modal">
+      <div class="route-modal-header">
+        <span>◈ ROUTE OPTIONS — <span id="route-ship-name">—</span></span>
+        <button class="modal-close" onclick="closeRouteModal()">✕</button>
+      </div>
+      <div class="route-modal-body" id="route-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Distress Notification Toast -->
+  <div class="toast-stack" id="toast-stack"></div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
